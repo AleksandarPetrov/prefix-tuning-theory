@@ -1,0 +1,15 @@
+torch
+fairscale
+fire
+sentencepiece
+tqdm
+matplotlib
+seaborn
+datasets==2.13.1
+evaluate
+transformers
+wandb
+sacrebleu
+nltk
+bert_score
+rouge_score
