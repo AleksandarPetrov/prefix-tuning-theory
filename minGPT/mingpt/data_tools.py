@@ -17,7 +17,7 @@ class CustomDataset(Dataset):
             split: Literal["train", "test"], 
             length=10, 
             num_digits=8, 
-            mode: Literal["ascending", "descending", "add1", "add2", "random", "ascending_add1"] = "random", 
+            mode: Literal["ascending", "descending", "add1", "add2", "random", "ascending_add1", "double_hist"] = "random", 
             prefix_padding: int = 0
         ):
         assert split in {'train', 'test'}
@@ -76,6 +76,11 @@ class CustomDataset(Dataset):
             sol = inp+2
         elif curr_mode == "ascending_add1":
             sol = torch.sort(inp, descending=False)[0] + 1
+        elif curr_mode == "double_hist":
+            sol = []
+            for el in inp:
+                sol.append(inp.tolist().count(el))
+            sol = torch.tensor(sol, dtype=torch.long)
         else:
             raise ValueError(f"Mode {curr_mode} is not recognized!")
 
@@ -128,8 +133,6 @@ def eval(
                 n-int(provide_first), 
                 do_sample=False, 
                 prefixes=prefixes,
-                attention_lora = attention_lora,
-                projection = projection,
             ) # using greedy argmax, not sampling
             sol_candidate = cat[:, prefix_size+n+int(provide_first):] # isolate the filled in sequence
             # compare the predicted sequence to the true sequence
@@ -143,7 +146,7 @@ def eval(
                 break
         rt = torch.tensor(results, dtype=torch.float)
         print("Final score: %d/%d = %.2f%% correct" % (rt.sum(), len(results), 100*rt.mean()))
-    return rt.sum()
+    return rt.mean().item()
 
 
 def attention_visualization(
