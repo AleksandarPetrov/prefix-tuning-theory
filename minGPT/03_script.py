@@ -21,11 +21,7 @@ seed = args.seed
 set_seed(seed)
 
 import wandb
-wandb.init(entity="", project="my-project-name")
-wandb.config.seed = args.seed
-wandb.config.nlayer = args.nlayer
-wandb.config.nhead = args.nhead
-wandb.config.prefixsize = args.prefixsize
+run = wandb.init(entity="", project="my-project-name")
 
 prefix_size = args.prefixsize
 train_dataset_random = CustomDataset('train', mode="random", prefix_padding=prefix_size)
@@ -67,11 +63,7 @@ else:
     # create a Trainer object
     train_config = Trainer.get_default_config()
     train_config.learning_rate = 5e-4
-<<<<<<< HEAD
-    train_config.max_iters = 4000
-=======
     train_config.max_iters = 40000
->>>>>>> a4d2fedaf6c44448f4327ed25678ddd468f7c137
     train_config.num_workers = 0
     trainer = Trainer(train_config, model, train_dataset_random)
     trainer.set_callback('on_batch_end', batch_end_callback)
@@ -86,11 +78,7 @@ prefixes = dict()
 
 for task, iterations, lr in zip(
     ["ascending", "descending", "add1", "add2", "ascending_add1", "double_hist"],
-<<<<<<< HEAD
-    [2000, 2000, 2000, 2000, 5000, 5000],
-=======
     [20_000, 20_000, 20_000, 20_000, 500_000, 500_000],
->>>>>>> a4d2fedaf6c44448f4327ed25678ddd468f7c137
     [5e-5, 5e-5, 5e-5, 5e-5, 5e-5, 5e-5]
 ):
     fname = f'03_{model_name}_prefix_{task}.pth'
@@ -126,9 +114,12 @@ for prefix_task in [None, "ascending", "descending", "add1", "add2", "ascending_
     
     results[prefix_task] = d
 
+run.log(results)
+
 yaml_file_path = model_name+"_accuracies.csv"
 # save as yaml
 import yaml
 with open(yaml_file_path, 'w') as outfile:
     yaml.dump(results, outfile, default_flow_style=False)
+
 
