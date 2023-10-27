@@ -13,3 +13,4 @@ sacrebleu
 nltk
 bert_score
 rouge_score
+git+https://github.com/cccntu/minLoRA.git@d47a4c93df87540bb396172cfac1f3246e7db5f9
