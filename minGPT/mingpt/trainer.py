@@ -11,6 +11,9 @@ import torch
 from torch.utils.data.dataloader import DataLoader
 from mingpt.utils import CfgNode as CN
 
+from functools import partial
+from minlora import LoRAParametrization, add_lora, apply_to_lora, get_lora_params, get_lora_state_dict
+
 class Trainer:
 
     @staticmethod
@@ -167,6 +170,99 @@ class PrefixTrainer(Trainer):
                 prefixes.grad.zero_()
             self.loss.backward()
             torch.nn.utils.clip_grad_norm_(prefixes, config.grad_norm_clip)
+            self.optimizer.step()
+
+            self.trigger_callbacks('on_batch_end')
+            self.iter_num += 1
+            tnow = time.time()
+            self.iter_dt = tnow - self.iter_time
+            self.iter_time = tnow
+
+            # termination conditions
+            if config.max_iters is not None and self.iter_num >= config.max_iters:
+                break
+
+
+# CHANGED: Added a LoRA trainer
+
+def add_lora_by_name(model, target_module_names, lora_config):
+    """Add LoRA parameterization to specific layers in a model by names"""
+    for name, layer in model.named_modules():
+        if any([m in name for m in target_module_names]):
+            add_lora(layer, lora_config=lora_config)
+
+class LoRATrainer(Trainer):
+
+    def __init__(
+            self, 
+            config, 
+            model, 
+            train_dataset, 
+            rank: int,
+            device
+        ):
+        super().__init__(config, model, train_dataset)
+        self.rank = rank
+        self.device = device
+
+    def run(self):
+        model = self.model
+        config = self.config
+        rank = self.rank
+
+        lora_config = {  # specify which layers to add lora to
+            torch.nn.Linear: {
+                "weight": partial(LoRAParametrization.from_linear, rank=rank),
+            },
+        }
+
+        with torch.device(self.device):
+            with torch.set_grad_enabled(True):
+                add_lora_by_name(model, ["c_proj", "c_fc"], lora_config=lora_config)
+
+        params = [
+            {"params": list(get_lora_params(model))},
+        ]
+
+        self.optimizer = torch.optim.AdamW(
+            params, 
+            lr=config.learning_rate, 
+            betas=config.betas
+        )
+
+        # setup the dataloader
+        train_loader = DataLoader(
+            self.train_dataset,
+            sampler=torch.utils.data.RandomSampler(self.train_dataset, replacement=True, num_samples=int(1e10)),
+            shuffle=False,
+            pin_memory=True,
+            batch_size=config.batch_size,
+            num_workers=config.num_workers,
+        )
+
+        model.eval() # because we are not training the model
+        self.iter_num = 0
+        self.iter_time = time.time()
+        data_iter = iter(train_loader)
+        while True:
+
+            # fetch the next batch (x, y) and re-init iterator if needed
+            try:
+                batch = next(data_iter)
+            except StopIteration:
+                data_iter = iter(train_loader)
+                batch = next(data_iter)
+            batch = [t.to(self.device) for t in batch]
+            x, y = batch
+
+            # forward the model
+            logits, self.loss = model(x, y)
+
+            # backprop and update the parameters
+            model.zero_grad(set_to_none=True)
+            self.loss.backward()
+            model.apply(apply_to_lora(lambda x: torch.nn.utils.clip_grad_norm_(x.lora_A, config.grad_norm_clip)))
+            model.apply(apply_to_lora(lambda x: torch.nn.utils.clip_grad_norm_(x.lora_B, config.grad_norm_clip)))
             self.optimizer.step()
 
             self.trigger_callbacks('on_batch_end')
