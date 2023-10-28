@@ -21,7 +21,7 @@ seed = args.seed
 set_seed(seed)
 
 import wandb
-run = wandb.init(entity="", project="my-project-name")
+run = wandb.init(project="my-project-name")
 
 prefix_size = args.prefixsize
 train_dataset_random = CustomDataset('train', mode="random", prefix_padding=prefix_size)
@@ -45,8 +45,8 @@ model_config = GPT.get_default_config()
 model_config.model_type = None
 model_config.vocab_size = train_dataset_random.get_vocab_size()
 model_config.block_size = train_dataset_random.get_block_size()
-model_config.n_layer = 4
-model_config.n_head = 4
+model_config.n_layer = args.nlayer
+model_config.n_head = args.nhead
 model_config.n_embd = 256
 model_config.batch_size = 512
 model = GPT(model_config)
@@ -105,16 +105,15 @@ results = {
     "nlayer": args.nlayer,
     "nhead": args.nhead,
 }
-for prefix_task in [None, "ascending", "descending", "add1", "add2", "ascending_add1", "double_hist"]:
+for prefix_task in ["pretrained", "ascending", "descending", "add1", "add2", "ascending_add1", "double_hist"]:
     print(f"Prefix {prefix_task}:")
     d = {}
     for test_task in ["ascending", "descending", "add1", "add2", "ascending_add1", "double_hist"]:
         print(f"- Task {test_task} ", end="")
-        d[test_task] = eval(model, dataset=locals()[f"test_dataset_{test_task}"], device=device, max_batches=32, prefixes=prefixes[prefix_task] if prefix_task is not None else None)
+        d[test_task] = eval(model, dataset=locals()[f"test_dataset_{test_task}"], device=device, max_batches=32, prefixes=prefixes[prefix_task] if prefix_task != "pretrained" else None)
     
     results[prefix_task] = d
 
-run.log(results)
 
 yaml_file_path = model_name+"_accuracies.csv"
 # save as yaml
@@ -123,3 +122,4 @@ with open(yaml_file_path, 'w') as outfile:
     yaml.dump(results, outfile, default_flow_style=False)
 
 
+run.log(results)
