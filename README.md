@@ -20,7 +20,9 @@ You may want to download some of our trained prefixes needed to run some of the 
 
     - `02_can_extract_pretrained_task.ipynb` shows that prefix-tuning can be used to specialize the model for one of the tasks it has seen during pre-training.
 
-    - `03_can_learn_new_task_same_attention.ipynb` shows that prefix-tuning can also learn a new task, as long as the attention patterns necessary to solve it have been learned during pre-training.
+    - `03_can_learn_new_task_same_attention.ipynb` shows that prefix-tuning can also learn a new task, as long as the attention patterns necessary to solve it have been learned during pretraining, but cannot learn a new task (double histogram) that cannot be solved with skills learned during pretraining.
+
+    - `04_prefix_tuning_vs_lora.ipynb` shows that rank-1 LoRA on the MLP is sufficient to learn double histogram but prefix-tuning with the same number of learnable parameters cannot (Section 6).
 
 - `longer_prefixes.ipynb` shows that the attention distribution over the prefix positions is not unifromly distributed, showing that prefix-tuning does not make full use of the subspace spanned by the prefix-induced biases. (Appendix B)
 
