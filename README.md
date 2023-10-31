@@ -1,6 +1,6 @@
 # When Do Prompting and Prefix-Tuning Work? 
 
-This is the companion code for our[_When Do Prompting and Prefix-Tuning Work? A Theory of Capabilities and Limitations_](arxiv.org) paper.
+This is the companion code for our [When Do Prompting and Prefix-Tuning Work? A Theory of Capabilities and Limitations](https://arxiv.org/abs/2310.19698) paper.
 
 You may want to download some of our trained prefixes needed to run some of the notebooks from https://drive.google.com/drive/folders/1Bff8VKh1ZdflaVFKDY9MiyCmewoAGnzV?usp=sharing. Make sure to place the checkpoints from the minGPT directory into the minGPT directory of this repository.
 
@@ -29,10 +29,12 @@ You may want to download some of our trained prefixes needed to run some of the 
 
 ## Reference
 
+```
 @article{petrov2023when,
   title={When Do Prompting and Prefix-Tuning Work? A Theory of Capabilities and Limitations},
-  author={},
-  journal={arXiv preprint arXiv:},
+  author={Aleksandar Petrov and Philip H. S. Torr and Adel Bibi},
+  journal={arXiv preprint arXiv:2310.19698},
   year={2023}
 }
+```
 
