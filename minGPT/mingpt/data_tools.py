@@ -1,10 +1,97 @@
-from typing import List, Literal, Optional, Tuple
+from __future__ import annotations
+from typing import List, Literal, Optional, Sequence, Tuple
 from matplotlib import pyplot as plt
 import seaborn as sns
 import torch
 from torch.utils.data import Dataset
 from torch.utils.data.dataloader import DataLoader
 import pickle
+
+class Task:
+    def __call__(self, inp: torch.Tensor) -> torch.Tensor:
+        raise NotImplementedError()
+
+    def __add__(self, other: Task) -> CompositeTask:
+        tasks: List[Task] = []
+        if isinstance(self, CompositeTask):
+            tasks += self.tasks
+        elif isinstance(self, Task):
+            tasks.append(self)
+        else:
+            raise RuntimeError(f"Only task types supported, received {type(self)} for self.")
+
+        if isinstance(other, CompositeTask):
+            tasks += other.tasks
+        elif isinstance(other, Task):
+            tasks.append(other)
+        else:
+            raise RuntimeError(f"Only task types supported, received {type(other)} for other.")
+
+        return CompositeTask(tasks)
+
+    def __str__(self):
+        return self.__class__.__name__
+
+class CompositeTask(Task):
+    def __init__(self, tasks: List[Task]):
+        self.tasks = tasks
+
+    def __call__(self, inp: torch.Tensor) -> torch.Tensor:
+        res = inp.clone()
+        for task in self.tasks:
+            res = task(res)
+        return res
+    
+    def __str__(self):
+        return "_".join(str(task) for task in self.tasks)
+
+class SortAscending(Task):
+    def __call__(self, inp: torch.Tensor) -> torch.Tensor:
+       return torch.sort(inp, descending=False)[0] 
+
+class SortDescending(Task):
+    def __call__(self, inp: torch.Tensor) -> torch.Tensor:
+       return torch.sort(inp, descending=True)[0] 
+
+class InverseBinary(Task):
+    def __call__(self, inp: torch.Tensor) -> torch.Tensor:
+       return torch.remainder(inp+1, 2)
+
+class Add1(Task):
+    def __call__(self, inp: torch.Tensor) -> torch.Tensor:
+       return inp+1
+
+class DoubleHistogram(Task):
+    def __call__(self, inp: torch.Tensor) -> torch.Tensor:
+        sol = []
+        for el in inp:
+            sol.append(inp.tolist().count(el))
+        return torch.tensor(sol, dtype=torch.long)
+
+class Modulo(Task):
+    def __call__(self, inp: torch.Tensor) -> torch.Tensor:
+        return torch.remainder(inp, inp[0])
+    
+class LessThan(Task):
+    def __call__(self, inp: torch.Tensor) -> torch.Tensor:
+        return torch.where(torch.lt(inp, inp[0]), inp, 0)
+    
+class MoreThanEqual(Task):
+    def __call__(self, inp: torch.Tensor) -> torch.Tensor:
+        return torch.where(torch.ge(inp, inp[0]), inp, 0)
+
+class Divisible(Task):
+    def __call__(self, inp: torch.Tensor) -> torch.Tensor:
+        return torch.where(torch.remainder(inp, inp[0]) < 0.5, inp, 0)
+    
+class NotDivisible(Task):
+    def __call__(self, inp: torch.Tensor) -> torch.Tensor:
+        return torch.where(torch.remainder(inp, inp[0]) > 0.5, inp, 0)
+    
+class FilterAtLeastNTimes():
+    def __call__(self, inp: torch.Tensor) -> torch.Tensor:
+        return torch.where(torch.ge(DoubleHistogram()(inp), inp[0]), inp, 0)
+
 
 class CustomDataset(Dataset):
     """ 
@@ -15,24 +102,23 @@ class CustomDataset(Dataset):
     def __init__(
             self, 
             split: Literal["train", "test"], 
+            tasks: List[Task], 
             length=10, 
             num_digits=8, 
-            mode: Literal["ascending", "descending", "add1", "add2", "random", "ascending_add1", "double_hist"] = "random", 
             prefix_padding: int = 0
         ):
         assert split in {'train', 'test'}
         self.split = split
         self.length = length
         self.num_digits = num_digits
-        self.mode = mode
+        self.tasks = tasks
         self.prefix_padding = prefix_padding
-        self.random_mode_list = ["ascending", "descending", "add1", "add2"]
     
     def __len__(self):
         return 10000
     
     def get_vocab_size(self):
-        return self.num_digits+2 # handling the add2 case
+        return self.num_digits+3 # handling the add2 case and starting from 1 as we can't do mod0
     
     def get_block_size(self):
         # the length of the sequence that will feed into transformer, 
@@ -41,11 +127,22 @@ class CustomDataset(Dataset):
         return self.length * 2 - 1 + self.prefix_padding
 
     def __getitem__(self, idx):
-        
+
+        curr_task = self.tasks[idx%len(self.tasks)]   
+
         # use rejection sampling to generate an input example from the desired split
         while True:
             # generate some random integers
-            inp = torch.randint(self.num_digits, size=(self.length,), dtype=torch.long)
+            inp = torch.randint(self.num_digits, size=(self.length,), dtype=torch.long)+1
+
+            # restrict the first element if the task is Modulo, Divisible, NotDivisible or FilterAtLeastNTimes
+            if isinstance(curr_task, (Modulo, Divisible, NotDivisible, FilterAtLeastNTimes)):
+                inp[0] = torch.randint(low=2, high=int(self.num_digits/2)+1, size=(1,))
+
+            # sample only 0s and 1s if the task is BinaryInversion
+            if isinstance(curr_task, InverseBinary):
+                inp = torch.randint(2, size=(self.length,), dtype=torch.long)
+
             # half of the time let's try to boost the number of examples that 
             # have a large number of repeats, as this is what the model seems to struggle
             # with later in training, and they are kind of rate
@@ -60,29 +157,8 @@ class CustomDataset(Dataset):
             if inp_split == self.split:
                 break # ok
 
-        if self.mode == "random":
-            curr_mode = self.random_mode_list[idx%len(self.random_mode_list)]
-        else:
-            curr_mode = self.mode
-
         # solve the task: 
-        if curr_mode == "ascending":
-            sol = torch.sort(inp, descending=False)[0] 
-        elif curr_mode == "descending":
-            sol = torch.sort(inp, descending=True)[0]
-        elif curr_mode == "add1":
-            sol = inp+1
-        elif curr_mode == "add2":
-            sol = inp+2
-        elif curr_mode == "ascending_add1":
-            sol = torch.sort(inp, descending=False)[0] + 1
-        elif curr_mode == "double_hist":
-            sol = []
-            for el in inp:
-                sol.append(inp.tolist().count(el))
-            sol = torch.tensor(sol, dtype=torch.long)
-        else:
-            raise ValueError(f"Mode {curr_mode} is not recognized!")
+        sol = curr_task(inp)
 
         # create the prefix padding
         pad = torch.zeros(self.prefix_padding,  dtype=torch.long)
