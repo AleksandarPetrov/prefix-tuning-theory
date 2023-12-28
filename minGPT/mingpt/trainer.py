@@ -5,14 +5,14 @@ so nothing in this file really has anything to do with GPT specifically.
 
 import time
 from collections import defaultdict
-from typing import Optional
+from typing import Optional, List
 
 import torch
 from torch.utils.data.dataloader import DataLoader
 from mingpt.utils import CfgNode as CN
 
 from functools import partial
-from minlora import LoRAParametrization, add_lora, apply_to_lora, get_lora_params, get_lora_state_dict
+from minlora import LoRAParametrization, add_lora, apply_to_lora, get_lora_params, get_lora_state_dict, remove_lora
 
 class Trainer:
 
@@ -199,16 +199,20 @@ class LoRATrainer(Trainer):
             model, 
             train_dataset, 
             rank: int,
-            device
+            device,
+            where: List[str] = ["c_proj", "c_fc"],
         ):
         super().__init__(config, model, train_dataset)
         self.rank = rank
         self.device = device
+        self.where = where
 
     def run(self):
         model = self.model
         config = self.config
         rank = self.rank
+
+        remove_lora(model)
 
         lora_config = {  # specify which layers to add lora to
             torch.nn.Linear: {
@@ -218,7 +222,10 @@ class LoRATrainer(Trainer):
 
         with torch.device(self.device):
             with torch.set_grad_enabled(True):
-                add_lora_by_name(model, ["c_proj", "c_fc"], lora_config=lora_config)
+                if self.where is not None:
+                    add_lora_by_name(model, self.where, lora_config=lora_config)
+                else:
+                    add_lora(model, lora_config=lora_config)
 
         params = [
             {"params": list(get_lora_params(model))},

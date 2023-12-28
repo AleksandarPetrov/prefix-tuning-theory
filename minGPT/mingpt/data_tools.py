@@ -6,6 +6,8 @@ from torch.utils.data import Dataset
 from torch.utils.data.dataloader import DataLoader
 import pickle
 
+from .bpe import BPETokenizer
+
 class CustomDataset(Dataset):
     """ 
     Modified class for the sort and add problem.
@@ -97,9 +99,15 @@ class CustomDataset(Dataset):
         y[:self.length+self.prefix_padding-1] = -1
         return x, y
 
-def batch_end_callback(trainer):
-    if (trainer.iter_num+1) % 1000 == 0:
-        print(f"iter_dt {trainer.iter_dt * 1000:>6.2f}ms; iter {trainer.iter_num+1:>6}: train loss {trainer.loss.item():.5f}")
+def batch_end_callback(trainer, steps=1000):
+    if (trainer.iter_num+1) % steps == 0:
+        print(f"iter_dt {trainer.iter_dt * steps:>6.2f}ms; iter {trainer.iter_num+1:>6}: train loss {trainer.loss.item():.5f}")
+
+def save_checkpoint(trainer, steps=5000):
+    if (trainer.iter_num+1) % steps == 0:
+        fname = f"tmp_checkpoint_{trainer.iter_num+1}.pth" 
+        torch.save(trainer.prefixes, fname)
+        print(f"Prefix checkpoint saved to {fname}")
 
 def eval(
         model, 
@@ -108,8 +116,6 @@ def eval(
         max_batches: int,
         provide_first: bool = False, 
         prefixes: Optional[torch.Tensor] = None,
-        attention_lora: Optional[torch.Tensor] = None,
-        projection: bool = False,
         show_wrong_examples: bool = False,
     ):
     """ Modified from the original minGPT code."""
@@ -148,6 +154,106 @@ def eval(
         print("Final score: %d/%d = %.2f%% correct" % (rt.sum(), len(results), 100*rt.mean()))
     return rt.mean().item()
 
+def eval_memory(
+        model, 
+        dataset: CustomDataset, 
+        device, 
+        max_batches: Optional[int] = None,
+        prefixes: Optional[torch.Tensor] = None,
+        show_wrong_examples: bool = False,
+        show_correct: bool = False,
+    ):
+    """ Modified from the original minGPT code."""
+
+    tr_id=dataset.tokenizer_map["<TR>"]
+    pad_id=dataset.tokenizer_map["<PAD>"]
+    prefix_size = dataset.prefix_padding
+
+    results = []
+    mistakes_printed_already = 0 if show_wrong_examples else 1000
+    loader = DataLoader(dataset, batch_size=1, num_workers=0, drop_last=False)
+    model.eval();
+    with torch.no_grad():
+        for b, (x, y) in enumerate(loader):
+            x = x.to(device)
+            y = y.to(device)
+            # isolate the input pattern alone
+            # find the position of tr_id
+            tr_id_pos = (x == tr_id).nonzero(as_tuple=True)[1][0]
+            pad_id_pos = (x == pad_id).nonzero(as_tuple=True)[1]
+            pad_id_pos = pad_id_pos[0] if len(pad_id_pos)>0 else -1
+            inp = x[:, :tr_id_pos+1]
+            sol = y[:, tr_id_pos:pad_id_pos]
+            # let the model sample the rest of the sequence
+            cat = model.generate(
+                inp, 
+                sol.size(1), 
+                do_sample=False, 
+                prefixes=prefixes,
+            ) # using greedy argmax, not sampling
+            sol_candidate = cat[:, tr_id_pos+1:tr_id_pos+1+sol.size(1)] # isolate the filled in sequence
+            # compare the predicted sequence to the true sequence
+            correct = (sol == sol_candidate).all(1).cpu() 
+            for i in range(x.size(0)):
+                results.append(int(correct[i]))
+                if not correct[i] and mistakes_printed_already < 3: # only print up to 3 mistakes to get a sense
+                    mistakes_printed_already += 1
+                    print("GPT claims that %s processed is %s but gt is %s" % (
+                        dataset.detokenize(inp[i].tolist()[prefix_size:]), 
+                        dataset.detokenize(sol_candidate[i].tolist()), 
+                        dataset.detokenize(sol[i].tolist())
+                        )
+                    )
+                if correct[i] and show_correct:
+                    print(f"Correct: {dataset.detokenize(inp[i].tolist()[prefix_size:])} is {dataset.detokenize(sol_candidate[i].tolist())}")
+            if max_batches is not None and b+1 >= max_batches:
+                break
+        rt = torch.tensor(results, dtype=torch.float)
+        print("Final score: %d/%d = %.2f%% correct" % (rt.sum(), len(results), 100*rt.mean()))
+    return rt.mean().item()
+
+def eval_classification(
+        model, 
+        dataset, 
+        device, 
+        max_batches: int,
+        prefixes: Optional[torch.Tensor] = None,
+        show_wrong_examples: bool = False,
+    ):
+    """ Modified from the original minGPT code."""
+
+    results = []
+    mistakes_printed_already = 0 if show_wrong_examples else 1000
+    loader = DataLoader(dataset, batch_size=1, num_workers=0, drop_last=False)
+    model.eval();
+    tokenizer = BPETokenizer()
+    with torch.no_grad():
+        for b, (x, y) in enumerate(loader):
+            x = x.to(device)
+            y = y.to(device)
+            # isolate the input pattern alone
+            # let the model sample the rest of the sequence
+            cat = model.generate(
+                x, 
+                len(y[0]), 
+                do_sample=False, 
+                prefixes=prefixes,
+            ) # using greedy argmax, not sampling
+            sol_candidate = cat[:, len(x[0]):] # isolate the filled in sequence
+            # compare the predicted sequence to the true sequence
+            # print(x, len(x))
+            # print("y", y)
+            # print("sol_cand", sol_candidate)
+            correct = (y == sol_candidate).all().cpu() 
+            results.append(int(correct))
+            if not correct and mistakes_printed_already < 3: # only print up to 3 mistakes to get a sense
+                mistakes_printed_already += 1
+                print("GPT claims that '%s' has class '%s' but gt is '%s'" % (tokenizer.decode(x[0]), tokenizer.decode(sol_candidate[0]), tokenizer.decode(y[0])))
+            if max_batches is not None and b+1 >= max_batches:
+                break
+        rt = torch.tensor(results, dtype=torch.float)
+        print("Final score: %d/%d = %.2f%% correct" % (rt.sum(), len(results), 100*rt.mean()))
+    return rt.mean().item()
 
 def attention_visualization(
         test_sample: List[int], 
