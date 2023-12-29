@@ -6,6 +6,7 @@ so nothing in this file really has anything to do with GPT specifically.
 import time
 from collections import defaultdict
 from typing import Optional
+import os
 
 import torch
 from torch.utils.data.dataloader import DataLoader
@@ -121,9 +122,31 @@ class PrefixTrainer(Trainer):
             model, 
             train_dataset, 
             prefixes: torch.Tensor, 
+            tmp_name=None,
         ):
         super().__init__(config, model, train_dataset)
         self.prefixes = prefixes
+        self.tmp_name = tmp_name
+        self.iter_num = 0
+
+
+    def save_checkpoint(self, filename):
+        """Save a checkpoint for the model and optimizer."""
+        torch.save({
+            'prefixes': self.prefixes,
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'iter_num': self.iter_num
+            }, filename)
+        print(f"Saved checkpoint {filename}")
+                            
+    def load_checkpoint(self, filename):
+        """Load a checkpoint into the model and optimizer."""
+        checkpoint = torch.load(filename)
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        self.iter_num = checkpoint['iter_num']+1
+        print(f"Loaded checkpoint {filename}")
+        return checkpoint['prefixes']
+
 
     def run(self):
         model = self.model
@@ -147,10 +170,24 @@ class PrefixTrainer(Trainer):
         )
 
         model.eval() # because we are not training the model
-        self.iter_num = 0
+
+        # Check for existing checkpoints and load if found
+        latest_checkpoint = None
+        for f in sorted(os.listdir(), reverse=True):
+            if f.startswith(f'tmp_'+str(self.tmp_name)):
+                latest_checkpoint = f
+                break
+        if latest_checkpoint:
+            loaded_prefixes = self.load_checkpoint(latest_checkpoint)     
+            with torch.no_grad():
+                prefixes.copy_(loaded_prefixes)
+
         self.iter_time = time.time()
         data_iter = iter(train_loader)
         while True:
+            
+            if (self.iter_num+1) % 25000 == 0:  # Every 25,000 iterations, save the model
+                self.save_checkpoint(f"tmp_{self.tmp_name}_{self.iter_num+1:09}")
 
             # fetch the next batch (x, y) and re-init iterator if needed
             try:
@@ -199,7 +236,7 @@ class LoRATrainer(Trainer):
             model, 
             train_dataset, 
             rank: int,
-            device
+            device,
         ):
         super().__init__(config, model, train_dataset)
         self.rank = rank
@@ -209,6 +246,7 @@ class LoRATrainer(Trainer):
         model = self.model
         config = self.config
         rank = self.rank
+
 
         lora_config = {  # specify which layers to add lora to
             torch.nn.Linear: {
@@ -244,6 +282,7 @@ class LoRATrainer(Trainer):
         self.iter_num = 0
         self.iter_time = time.time()
         data_iter = iter(train_loader)
+        
         while True:
 
             # fetch the next batch (x, y) and re-init iterator if needed
