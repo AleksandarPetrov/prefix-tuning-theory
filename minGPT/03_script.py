@@ -92,7 +92,7 @@ for task, iterations, lr in zip(
         train_config.num_workers = 0
         train_config.max_iters = iterations
         train_config.learning_rate = lr
-        trainer = PrefixTrainer(train_config, model, locals()[f"train_dataset_{task}"], prefixes[task])
+        trainer = PrefixTrainer(train_config, model, locals()[f"train_dataset_{task}"], prefixes[task], f"{model_name}_{task}")
         trainer.set_callback('on_batch_end', batch_end_callback)
         trainer.run()
         torch.save(prefixes[task], fname)
