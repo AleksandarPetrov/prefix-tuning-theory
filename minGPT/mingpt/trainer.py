@@ -122,11 +122,11 @@ class PrefixTrainer(Trainer):
             model, 
             train_dataset, 
             prefixes: torch.Tensor, 
-            tmp_name=None,
+            checkpoints_name=None,
         ):
         super().__init__(config, model, train_dataset)
         self.prefixes = prefixes
-        self.tmp_name = tmp_name
+        self.checkpoints_name = checkpoints_name
         self.iter_num = 0
 
 
@@ -173,9 +173,9 @@ class PrefixTrainer(Trainer):
 
         # Check for existing checkpoints and load if found
         latest_checkpoint = None
-        for f in sorted(os.listdir(), reverse=True):
-            if f.startswith(f'tmp_'+str(self.tmp_name)):
-                latest_checkpoint = f
+        for f in sorted(os.listdir(os.path.dirname(self.checkpoints_name)), reverse=True):
+            if f.startswith(self.checkpoints_name.split('/')[-1]):
+                latest_checkpoint = os.path.join(os.path.dirname(self.checkpoints_name), f)
                 break
         if latest_checkpoint:
             loaded_prefixes = self.load_checkpoint(latest_checkpoint)     
@@ -186,8 +186,7 @@ class PrefixTrainer(Trainer):
         data_iter = iter(train_loader)
         while True:
             
-            if (self.iter_num+1) % 25000 == 0:  # Every 25,000 iterations, save the model
-                self.save_checkpoint(f"tmp_{self.tmp_name}_{self.iter_num+1:09}")
+
 
             # fetch the next batch (x, y) and re-init iterator if needed
             try:
@@ -210,6 +209,9 @@ class PrefixTrainer(Trainer):
             self.optimizer.step()
 
             self.trigger_callbacks('on_batch_end')
+            if (self.iter_num+1) % 10_000 == 0:  # Every 10,000 iterations, save the model
+                self.save_checkpoint(f"{self.checkpoints_name}_{self.iter_num+1:09}.pth")
+                
             self.iter_num += 1
             tnow = time.time()
             self.iter_dt = tnow - self.iter_time

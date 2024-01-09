@@ -88,7 +88,7 @@ class NotDivisible(Task):
     def __call__(self, inp: torch.Tensor) -> torch.Tensor:
         return torch.where(torch.remainder(inp, inp[0]) > 0.5, inp, 0)
     
-class FilterAtLeastNTimes():
+class FilterAtLeastNTimes(Task):
     def __call__(self, inp: torch.Tensor) -> torch.Tensor:
         return torch.where(torch.ge(DoubleHistogram()(inp), inp[0]), inp, 0)
 
@@ -118,7 +118,7 @@ class CustomDataset(Dataset):
         return 10000
     
     def get_vocab_size(self):
-        return self.num_digits+3 # handling the add2 case and starting from 1 as we can't do mod0
+        return self.num_digits+4 # handling the add3 case and starting from 1 as we can't do mod0
     
     def get_block_size(self):
         # the length of the sequence that will feed into transformer, 
@@ -135,9 +135,13 @@ class CustomDataset(Dataset):
             # generate some random integers
             inp = torch.randint(self.num_digits, size=(self.length,), dtype=torch.long)+1
 
-            # restrict the first element if the task is Modulo, Divisible, NotDivisible or FilterAtLeastNTimes
-            if isinstance(curr_task, (Modulo, Divisible, NotDivisible, FilterAtLeastNTimes)):
+            # restrict the first element if the task is Modulo, Divisible, NotDivisible
+            if isinstance(curr_task, (Modulo, Divisible, NotDivisible)):
                 inp[0] = torch.randint(low=2, high=int(self.num_digits/2)+1, size=(1,))
+
+            # restrict the first element if the task is FilterAtLeastNTimes
+            if isinstance(curr_task, (Modulo, Divisible, NotDivisible, FilterAtLeastNTimes)):
+                inp[0] = torch.randint(low=1, high=int(self.num_digits/3)+1, size=(1,))
 
             # sample only 0s and 1s if the task is BinaryInversion
             if isinstance(curr_task, InverseBinary):
@@ -173,9 +177,9 @@ class CustomDataset(Dataset):
         y[:self.length+self.prefix_padding-1] = -1
         return x, y
 
-def batch_end_callback(trainer):
-    if (trainer.iter_num+1) % 1000 == 0:
-        print(f"iter_dt {trainer.iter_dt * 1000:>6.2f}ms; iter {trainer.iter_num+1:>6}: train loss {trainer.loss.item():.5f}")
+def batch_end_callback(trainer, steps=1000):
+    if (trainer.iter_num+1) % steps == 0:
+        print(f"iter_dt {trainer.iter_dt * steps:>6.2f}ms; iter {trainer.iter_num+1:>6}: train loss {trainer.loss.item():.5f}")
 
 def eval(
         model, 

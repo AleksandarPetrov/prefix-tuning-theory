@@ -163,3 +163,4 @@ wandb/
 *.pt
 *.pth
 *.pdf
+*.yaml
