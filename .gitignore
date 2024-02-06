@@ -163,3 +163,6 @@ wandb/
 *.pt
 *.pth
 *.pdf
+*.csv
+
+minGPT/tmp_*
