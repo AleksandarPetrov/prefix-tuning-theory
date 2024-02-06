@@ -86,7 +86,7 @@ model_config.n_embd = args.embed_size
 model_config.batch_size = 512
 model = GPT(model_config)
 
-model_name = f"06_results/pt{args.pretraining_tasks}_ft{args.prefixtuning_tasks}_ps{prefix_size}_nl{model_config.n_layer}_nh{model_config.n_head}_em{model_config.n_embd}_s{seed}"
+model_name = f"06_results/pt_{args.pretraining_tasks}_ft_{args.prefixtuning_tasks}_ps{prefix_size}_nl{model_config.n_layer}_nh{model_config.n_head}_em{model_config.n_embd}_s{seed}"
 
 if not os.path.exists(model_name):
     os.makedirs(model_name)
