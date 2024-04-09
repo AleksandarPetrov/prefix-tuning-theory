@@ -30,11 +30,12 @@ You may want to download some of our trained prefixes needed to run some of the 
 ## Reference
 
 ```
-@article{petrov2023when,
-  title={When Do Prompting and Prefix-Tuning Work? A Theory of Capabilities and Limitations},
+@inproceedings{petrov2023when,
+  title={When Do Prompting and Prefix-Tuning Work? {A} Theory of Capabilities and Limitations},
   author={Aleksandar Petrov and Philip H. S. Torr and Adel Bibi},
-  journal={arXiv preprint arXiv:2310.19698},
-  year={2023}
+  booktitle={International Conference on Learning Representations},
+  url={https://arxiv.org/abs/2310.19698},
+  year={2024}
 }
 ```
 
